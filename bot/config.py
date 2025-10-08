@@ -27,7 +27,7 @@ class Config(object):
     )
     
     # File Configuration
-    DOWNLOAD_LOCATION = get_config("DOWNLOAD_LOCATION", "./downloads")
+    DOWNLOAD_LOCATION = get_config("DOWNLOAD_LOCATION", "/app/downloads")
     MAX_FILE_SIZE = int(get_config("MAX_FILE_SIZE", "4294967296"))  # 4GB
     TG_MAX_FILE_SIZE = int(get_config("TG_MAX_FILE_SIZE", "2097152000"))  # 2GB
     FREE_USER_MAX_FILE_SIZE = int(get_config("FREE_USER_MAX_FILE_SIZE", "1073741824"))  # 1GB
