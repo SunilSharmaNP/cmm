@@ -1,5 +1,12 @@
+# 29. heroku.yml - Heroku container configuration
+# Enhanced VideoCompress Bot Heroku Configuration v2.0
 build:
   docker:
-    worker: Dockerfile
+    web: Dockerfile
+    
+setup:
+  config:
+    PYTHON_VERSION: 3.10.12
+    
 run:
-  worker: bash start.sh
+  web: python -m bot
