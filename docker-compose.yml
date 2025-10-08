@@ -1,0 +1,106 @@
+# 20. docker-compose.yml - Complete Docker setup
+
+version: '3.8'
+
+services:
+  # Main bot service
+  videocompress-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: enhanced-videocompress-bot
+    restart: unless-stopped
+    environment:
+      # Required environment variables
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - APP_ID=${APP_ID}
+      - API_HASH=${API_HASH}
+      - DATABASE_URL=mongodb://mongodb:27017/videocompressbot
+      - AUTH_USERS=${AUTH_USERS}
+      - BOT_USERNAME=${BOT_USERNAME}
+      - LOG_CHANNEL=${LOG_CHANNEL}
+      # Optional environment variables
+      - UPDATES_CHANNEL=${UPDATES_CHANNEL:-}
+      - SESSION_NAME=EnhancedCompressorBot
+      - MAX_CONCURRENT_PROCESSES=3
+      - ENABLE_QUEUE=True
+      - DEFAULT_COMPRESSION=50
+    volumes:
+      # Persistent storage for downloads and logs
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
+      - ./temp:/app/temp
+    networks:
+      - botnet
+    depends_on:
+      - mongodb
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # MongoDB database service
+  mongodb:
+    image: mongo:5-focal
+    container_name: videocompress-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: videocompressbot
+    volumes:
+      - mongodb_data:/data/db
+      - ./backups:/backups
+    networks:
+      - botnet
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # Optional: MongoDB Admin Interface (uncomment to enable)
+  # mongo-express:
+  #   image: mongo-express:latest
+  #   container_name: videocompress-mongo-express
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8081:8081"
+  #   environment:
+  #     ME_CONFIG_MONGODB_SERVER: mongodb
+  #     ME_CONFIG_MONGODB_PORT: 27017
+  #     ME_CONFIG_BASICAUTH_USERNAME: admin
+  #     ME_CONFIG_BASICAUTH_PASSWORD: admin123
+  #   depends_on:
+  #     - mongodb
+  #   networks:
+  #     - botnet
+
+  # Optional: Nginx reverse proxy (uncomment to enable)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: videocompress-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   networks:
+  #     - botnet
+  #   depends_on:
+  #     - videocompress-bot
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  botnet:
+    driver: bridge
