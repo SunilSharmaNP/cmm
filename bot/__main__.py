@@ -73,7 +73,7 @@ class EnhancedVideoCompressBot:
                 api_id=APP_ID,
                 api_hash=API_HASH,
                 workers=8,
-                sleep_threshold=10
+                sleep_threshold=10,
                 parse_mode=ParseMode.HTML
             )
             
