@@ -1,4 +1,4 @@
-# 2. bot/config.py - Enhanced configuration
+
 
 from bot.get_cfg import get_config
 import os
@@ -18,7 +18,7 @@ class Config(object):
     LOG_CHANNEL = get_config("LOG_CHANNEL", "")
     UPDATES_CHANNEL = get_config("UPDATES_CHANNEL", None)
     
-    # User Configuration
+    # User Configuration - FIXED
     AUTH_USERS = set(
         int(x) for x in get_config(
             "AUTH_USERS",
@@ -43,13 +43,13 @@ class Config(object):
     FINISHED_PROGRESS_STR = get_config("FINISHED_PROGRESS_STR", "▓")
     UN_FINISHED_PROGRESS_STR = get_config("UN_FINISHED_PROGRESS_STR", "░")
     
-    # UI Configuration
-    SHOULD_USE_BUTTONS = get_config("SHOULD_USE_BUTTONS", "True").lower() == "true"
+    # UI Configuration - FIXED
+    SHOULD_USE_BUTTONS = str(get_config("SHOULD_USE_BUTTONS", "True")).lower() == "true"
     
     # Logging Configuration
     LOG_FILE_ZZGEVC = get_config("LOG_FILE_ZZGEVC", "logs/bot.log")
     
-    # Enhanced Features Configuration
+    # Enhanced Features Configuration - FIXED
     MAX_CONCURRENT_PROCESSES = int(get_config("MAX_CONCURRENT_PROCESSES", "3"))
     ENABLE_QUEUE = str(get_config("ENABLE_QUEUE", "True")).lower() == "true"
     QUEUE_SIZE = int(get_config("QUEUE_SIZE", "10"))
@@ -59,7 +59,7 @@ class Config(object):
     MIN_COMPRESSION = int(get_config("MIN_COMPRESSION", "10"))
     MAX_COMPRESSION = int(get_config("MAX_COMPRESSION", "90"))
     
-    # Quality Presets
+    # Quality Presets - FIXED
     COMPRESSION_PRESETS = {
         'high': {
             'video_codec': 'libx264',
@@ -93,12 +93,12 @@ class Config(object):
     SUPPORTED_OUTPUT_FORMATS = ['mp4', 'mkv', 'webm', 'avi']
     DEFAULT_OUTPUT_FORMAT = get_config("DEFAULT_OUTPUT_FORMAT", "mp4")
     
-    # Thumbnail Configuration
+    # Thumbnail Configuration - FIXED
     DEF_THUMB_NAIL_VID_S = get_config(
         "DEF_THUMB_NAIL_VID_S", 
         "https://telegra.ph/file/4a48f5c40c68ac14be2f5.jpg"
     )
-    CUSTOM_THUMBNAIL_ENABLED = get_config("CUSTOM_THUMBNAIL_ENABLED", "True").lower() == "true"
+    CUSTOM_THUMBNAIL_ENABLED = str(get_config("CUSTOM_THUMBNAIL_ENABLED", "True")).lower() == "true"
     
     # Network Configuration
     HTTP_PROXY = get_config("HTTP_PROXY", None)
@@ -113,6 +113,6 @@ class Config(object):
     DB_POOL_SIZE = int(get_config("DB_POOL_SIZE", "10"))
     DB_MAX_IDLE_TIME = int(get_config("DB_MAX_IDLE_TIME", "300"))  # 5 minutes
     
-    # Backup Configuration
-    ENABLE_BACKUP = get_config("ENABLE_BACKUP", "False").lower() == "true"
+    # Backup Configuration - FIXED
+    ENABLE_BACKUP = str(get_config("ENABLE_BACKUP", "False")).lower() == "true"
     BACKUP_CHANNEL = get_config("BACKUP_CHANNEL", None)
