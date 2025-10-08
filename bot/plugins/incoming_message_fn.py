@@ -212,7 +212,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                 download_start = None
 
             try:
-                # Download file
+                # Download file - FIXED PROGRESS ARGS
                 d_start = time.time()
                 
                 status_data = {
@@ -229,10 +229,10 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                     file_name=saved_file_path,
                     progress=progress_for_pyrogram,
                     progress_args=(
-                        bot,
-                        Localisation.DOWNLOAD_START,
-                        sent_message,
-                        d_start
+                        "Downloading",  # ud_type (3rd arg)
+                        sent_message,   # message (4th arg) 
+                        d_start,        # start_time (5th arg)
+                        bot             # bot (6th arg - optional)
                     )
                 )
 
@@ -349,10 +349,10 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                     reply_to_message_id=update.id,
                     progress=progress_for_pyrogram,
                     progress_args=(
-                        bot,
-                        Localisation.UPLOAD_START,
-                        sent_message,
-                        u_start
+                        "Uploading",    # ud_type (3rd arg)
+                        sent_message,   # message (4th arg)
+                        u_start,        # start_time (5th arg) 
+                        bot             # bot (6th arg - optional)
                     )
                 )
 
