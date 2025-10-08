@@ -1,75 +1,122 @@
+
 {
-  "name": "VideoCompressBot",
-  "description": "Telegram's best Video Compress Bot",
+  "name": "Enhanced VideoCompress Bot v2.0",
+  "description": "Advanced Telegram Video Compression Bot with Enhanced Features",
   "logo": "https://telegra.ph/file/b687febf32e4d583fb1d4.jpg",
   "keywords": [
     "telegram",
-    "best",
+    "bot",
     "video",
     "compress",
-    "bot"
+    "ffmpeg",
+    "enhanced",
+    "python",
+    "pyrogram",
+    "mongodb",
+    "docker"
   ],
   "success_url": "https://t.me/linux_repo",
   "website": "https://t.me/Discovery_Updates",
-  "repository": "https://github.com/AbirHasan2005/VideoCompress",
+  "repository": "https://github.com/enhanced/VideoCompress",
   "env": {
     "ENV": {
-      "description": "Setting this to ANYTHING will enable VARs when in ENV mode",
+      "description": "Set to ANYTHING to enable environment variables",
       "value": "ANYTHING"
     },
     "SESSION_NAME": {
-      "description": "Keep this default",
-      "value": "AHCompressBot",
+      "description": "Session name for the bot",
+      "value": "EnhancedCompressorBot",
       "required": true
     },
     "DATABASE_URL": {
-      "description": "Your MongoDB URL for Database. Ask in Support Group: https://t.me/linux_repo",
+      "description": "MongoDB database URL for storing user data and statistics",
       "value": "",
       "required": true
     },
     "TG_BOT_TOKEN": {
-      "description": "Your bot token, as a string. Get this from @BotFather",
+      "description": "Telegram Bot Token from @BotFather",
       "value": "",
       "required": true
     },
     "APP_ID": {
-      "description": "Get this value from https://my.telegram.org",
+      "description": "Telegram API ID from https://my.telegram.org",
       "value": "",
       "required": true
     },
     "API_HASH": {
-      "description": "Get this value from https://my.telegram.org",
+      "description": "Telegram API Hash from https://my.telegram.org",
       "value": "",
       "required": true
     },
     "AUTH_USERS": {
-      "description": "Allow only pre-defined users to use this bot as Sudo User. Separate with Space. Just for using Admin Commands.",
-      "value": "715779594",
-      "required": false
-    },
-    "FINISHED_PROGRESS_STR": {
-      "description": "Should be a single character.",
-      "required": false
-    },
-    "UN_FINISHED_PROGRESS_STR": {
-      "description": "Should be a single character.",
-      "required": false
+      "description": "Space-separated list of admin user IDs",
+      "value": "",
+      "required": true
     },
     "BOT_USERNAME": {
-      "description": "Your Bot Username. Without `@` before Username!",
+      "description": "Bot username without @ symbol",
       "value": "",
       "required": true
     },
     "LOG_CHANNEL": {
-      "description": "Your Bot's Log Channel's Username. For Help ask in @linux_repo",
+      "description": "Log channel username or ID (with @)",
       "value": "",
       "required": true
     },
     "UPDATES_CHANNEL": {
-      "description": "Do Force Sub! Add your Channel username which you want to do Force Sub. Read README.md file first!",
+      "description": "Updates channel for force subscription (optional)",
       "value": "",
+      "required": false
+    },
+    "MAX_FILE_SIZE": {
+      "description": "Maximum file size in bytes (4GB default)",
+      "value": "4294967296",
+      "required": false
+    },
+    "TG_MAX_FILE_SIZE": {
+      "description": "Telegram maximum file size in bytes (2GB default)",
+      "value": "2097152000",
+      "required": false
+    },
+    "MAX_CONCURRENT_PROCESSES": {
+      "description": "Maximum concurrent compression processes",
+      "value": "3",
+      "required": false
+    },
+    "DEFAULT_COMPRESSION": {
+      "description": "Default compression percentage (10-90)",
+      "value": "50",
+      "required": false
+    },
+    "ENABLE_QUEUE": {
+      "description": "Enable queue management system",
+      "value": "True",
+      "required": false
+    },
+    "RATE_LIMIT_MESSAGES": {
+      "description": "Rate limit: messages per time window",
+      "value": "10",
+      "required": false
+    },
+    "RATE_LIMIT_WINDOW": {
+      "description": "Rate limit time window in seconds",
+      "value": "60",
       "required": false
     }
   },
-  "stack": "container"
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-python"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest"
+    }
+  ],
+  "stack": "heroku-22"
 }
