@@ -1,0 +1,198 @@
+# 22. .gitignore - Comprehensive ignore file
+
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ================================
+# Virtual Environments
+# ================================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ================================
+# IDE & Editors
+# ================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# ================================
+# OS Generated Files
+# ================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ================================
+# Bot Specific Files
+# ================================
+
+# Downloads and temporary files
+downloads/
+temp/
+*.tmp
+*.temp
+
+# Log files
+logs/
+*.log
+
+# Progress tracking
+progress*.txt
+status*.json
+
+# Session files
+*.session
+*.session-journal
+
+# Configuration files with secrets
+config.env
+.env.local
+.env.production
+secrets/
+
+# ================================
+# Media Files
+# ================================
+# Video files
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+*.flv
+*.wmv
+*.m4v
+*.3gp
+*.ts
+*.mts
+*.m2ts
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.webp
+*.ico
+
+# Audio files
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+
+# Archive files
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tar.bz2
+
+# ================================
+# Database
+# ================================
+*.db
+*.sqlite
+*.sqlite3
+mongo_data/
+
+# ================================
+# Docker
+# ================================
+docker-compose.override.yml
+.dockerignore
+
+# ================================
+# Testing
+# ================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ================================
+# Documentation
+# ================================
+docs/_build/
+site/
+
+# ================================
+# Package Management
+# ================================
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+*.egg
+
+# ================================
+# Jupyter Notebook
+# ================================
+.ipynb_checkpoints
+
+# ================================
+# Backup Files
+# ================================
+*.backup
+*.bak
+*.orig
+
+# ================================
+# Cloud Storage
+# ================================
+.aws/
+.gcloud/
+.azure/
+
+# ================================
+# Certificates & Keys
+# ================================
+*.key
+*.pem
+*.crt
+*.cert
+ssl/
