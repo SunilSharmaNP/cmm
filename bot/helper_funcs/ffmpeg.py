@@ -396,4 +396,3 @@ async def check_ffmpeg_availability() -> bool:
         LOGGER.error(f"Error checking ffmpeg availability: {e}")
         return False
         
-print("Created enhanced FFmpeg module")
