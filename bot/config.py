@@ -51,7 +51,7 @@ class Config(object):
     
     # Enhanced Features Configuration
     MAX_CONCURRENT_PROCESSES = int(get_config("MAX_CONCURRENT_PROCESSES", "3"))
-    ENABLE_QUEUE = get_config("ENABLE_QUEUE", "True").lower() == "true"
+    ENABLE_QUEUE = str(get_config("ENABLE_QUEUE", "True")).lower() == "true"
     QUEUE_SIZE = int(get_config("QUEUE_SIZE", "10"))
     
     # Compression Configuration
