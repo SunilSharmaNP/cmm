@@ -7,7 +7,7 @@ import time
 import asyncio
 import json
 from typing import Optional
-
+from pyrogram.enums.parse_mode import ParseMode
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant, UsernameNotOccupied
@@ -83,6 +83,7 @@ async def incoming_start_message_f(bot: Client, update: Message):
         await bot.send_message(
             chat_id=update.chat.id,
             text=Localisation.START_TEXT,
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton('📖 Help', callback_data='help'),
@@ -126,6 +127,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
         if not update.reply_to_message or not update.reply_to_message.video:
             await update.reply_text(
                 Localisation.ERROR_MESSAGES['no_reply'],
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton('📖 How to Use', callback_data='help')
                 ]])
@@ -202,7 +204,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                         f"📏 **Size:** {humanbytes(video.file_size)}\\n"
                         f"🎯 **Quality:** {target_percentage}%\\n"
                         f"⏰ **Started:** `{ist}` (GMT+05:30)",
-                        parse_mode="markdown"
+                        parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
                     LOGGER.warning(f"Could not send log message: {e}")
@@ -288,7 +290,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                         f"⏱️ **Duration:** {TimeFormatter(duration * 1000)}\\n"
                         f"🎯 **Target:** {target_percentage}%\\n"
                         f"⏰ **Started:** `{ist}` (GMT+05:30)",
-                        parse_mode="markdown"
+                        parse_mode=ParseMode.HTML
                     )
                 except:
                     compress_start = None
@@ -329,7 +331,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                             f"📤 **Uploading Video...** \\n\\n"
                             f"👤 **User:** {update.from_user.first_name} ({update.from_user.id})\\n"
                             f"⏰ **Started:** `{ist}` (GMT+05:30)",
-                            parse_mode="markdown"
+                            parse_mode=ParseMode.HTML
                         )
                     except:
                         upload_start = None
@@ -396,7 +398,7 @@ async def incoming_compress_message_f(bot: Client, update: Message):
                                 f"⏰ **Completed:** `{ist}` (GMT+05:30)\\n"
                                 f"📊 **Total Time:** {TimeFormatter((time.time() - d_start) * 1000)}\\n\\n"
                                 f"🎉 **Bot is Free Now!**",
-                                parse_mode="markdown"
+                                parse_mode=ParseMode.HTML
                             )
                         except:
                             pass
@@ -438,6 +440,7 @@ async def incoming_cancel_message_f(bot: Client, update: Message):
                 "🗑️ **Cancel Current Process?**\\n\\n"
                 "⚠️ This will stop the current compression!\\n"
                 "❌ This action cannot be undone!",
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton('✅ Yes, Cancel', callback_data='confirm_cancel'),
