@@ -159,10 +159,8 @@ echo ""
 # Final check
 print_info "Pre-flight checks completed successfully!"
 print_info "Starting Enhanced VideoCompress Bot v2.0..."
-echo ""
+echo "Sunil Sharma 2.O"
 
 # Start the bot
 exec python3 -m bot
 
-
-print("Created root configuration files")
