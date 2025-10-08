@@ -7,6 +7,7 @@ import signal
 from pyrogram import Client, idle
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram import filters
+from pyrogram.enums import ParseMode
 
 # Import all configurations and modules
 from bot import (
@@ -73,6 +74,7 @@ class EnhancedVideoCompressBot:
                 api_hash=API_HASH,
                 workers=8,
                 sleep_threshold=10
+                parse_mode=ParseMode.HTML
             )
             
             # Set parse mode
