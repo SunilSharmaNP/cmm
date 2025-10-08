@@ -1,4 +1,14 @@
-# 11. bot/helper_funcs/ffmpeg.py - Enhanced FFmpeg handler
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# (c) Shrimadhav U K | @AbirHasan2005
+
+# the logging things
+import logging
+logging.basicConfig(
+    level=logging.DEBUG, 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+LOGGER = logging.getLogger(__name__)
 
 import asyncio
 import os
@@ -7,11 +17,11 @@ import re
 import json
 import subprocess
 import math
-import logging
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple # Added imports from new file
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-from bot.helper_funcs.display_progress import TimeFormatter
+from bot.helper_funcs.display_progress import (
+  TimeFormatter
+)
 from bot.localisation import Localisation
 from bot import (
     FINISHED_PROGRESS_STR,
@@ -19,10 +29,9 @@ from bot import (
     DOWNLOAD_LOCATION
 )
 
-LOGGER = logging.getLogger(__name__)
-
+# Enhanced video conversion from ffmpeg (1).py
 async def convert_video(video_file, output_directory, total_time, bot, message, target_percentage, isAuto=False, bug=None):
-    """Enhanced video conversion with better error handling"""
+    """Enhanced video conversion with better error handling, based on ffmpeg (1).py"""
     try:
         # https://stackoverflow.com/a/13891070/4723940
         out_put_file_name = output_directory + "/" + str(round(time.time())) + ".mp4"
@@ -41,7 +50,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
             "-i",
             video_file,
             "-c:v",   
-            "libx264",
+            "libx264", # Changed from 'h264' to 'libx264' for explicit encoder
             "-preset",   
             "ultrafast",
             "-tune",
@@ -63,7 +72,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 elif target_bitrate // 1000 > 1:
                     bitrate = str(target_bitrate//1000) + "k"
                 else:
-                    bitrate = "500k"  # Minimum bitrate
+                    bitrate = "500k"  # Minimum bitrate added from new file
                     
                 extra = ["-b:v", bitrate, "-bufsize", bitrate]
                 for elem in reversed(extra):
@@ -92,23 +101,24 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
             statusMsg = {}
             
         statusMsg['pid'] = process.pid
-        statusMsg['message'] = message.id
+        statusMsg['message'] = message.id # Changed from message.message_id
         
         with open(status, 'w') as f:
             json.dump(statusMsg, f, indent=2)
 
         isDone = False
-        while process.returncode is None:
+        while process.returncode is None: # Corrected condition from `!= 0` to `is None`
             await asyncio.sleep(3)
             
             try:
-                with open(progress, 'r') as file:
+                # Read from `progress` file in the output_directory, not hardcoded DOWNLOAD_LOCATION
+                with open(progress, 'r') as file: 
                     text = file.read()
                     
                 frame = re.findall("frame=(\\d+)", text)
                 time_in_us = re.findall("out_time_ms=(\\d+)", text)
-                progress_match = re.findall("progress=(\\w+)", text)
-                speed = re.findall("speed=([\\d.]+)", text)
+                progress_match = re.findall("progress=(\\w+)", text) # Used progress_match for clarity
+                speed = re.findall("speed=([\\d.]+)", text) # Used regex from new file
                 
                 if len(frame):
                     frame = int(frame[-1])
@@ -118,7 +128,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 if len(speed):
                     speed = speed[-1]
                 else:
-                    speed = "1"
+                    speed = "1" # Default speed as string "1"
                     
                 if len(time_in_us):
                     time_in_us = time_in_us[-1]
@@ -143,10 +153,11 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 if difference > 0:
                     ETA = TimeFormatter(difference * 1000)
 
-                percentage = math.floor(elapsed_time * 100 / total_time) if total_time > 0 else 0
+                percentage = math.floor(elapsed_time * 100 / total_time) if total_time > 0 else 0 # Added check for total_time > 0
                 percentage = min(percentage, 100)  # Cap at 100%
                 
-                progress_str = "📊 **Progress:** {0}%\\n[{1}{2}]".format(
+                # Updated to use markdown bold for telegram compatibility and consistency with new file
+                progress_str = "📊 **Progress:** {0}%\\n[{1}{2}]".format( 
                     round(percentage, 2),
                     ''.join([FINISHED_PROGRESS_STR for i in range(math.floor(percentage / 10))]),
                     ''.join([UN_FINISHED_PROGRESS_STR for i in range(10 - math.floor(percentage / 10))])
@@ -160,7 +171,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                     await message.edit_text(
                         text=stats,
                         reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton('❌ Cancel ❌', callback_data='cancel_compression')
+                            InlineKeyboardButton('❌ Cancel ❌', callback_data='cancel_compression') # Updated callback_data
                         ]])
                     )
                 except:
@@ -174,19 +185,19 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                     
             except Exception as e:
                 LOGGER.error(f"Progress monitoring error: {e}")
-                continue
+                continue # Continue loop on error
 
         # Wait for the subprocess to finish
         stdout, stderr = await process.communicate()
         
-        e_response = stderr.decode().strip() if stderr else ""
+        e_response = stderr.decode().strip() if stderr else "" # Better handling for empty stderr/stdout
         t_response = stdout.decode().strip() if stdout else ""
         
         LOGGER.info(f"FFmpeg stdout: {t_response}")
         if e_response:
             LOGGER.error(f"FFmpeg stderr: {e_response}")
         
-        # Clean up progress files
+        # Clean up progress files added from new file
         try:
             if os.path.exists(progress):
                 os.remove(progress)
@@ -204,6 +215,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
         LOGGER.error(f"Video conversion error: {e}")
         return None
 
+# Updated media_info to use asyncio.create_subprocess_exec (from new file)
 async def media_info(saved_file_path):
     """Get media information using ffmpeg"""
     try:
@@ -217,8 +229,9 @@ async def media_info(saved_file_path):
         )
         
         stdout, stderr = await process.communicate()
-        output = stderr.decode().strip() if stderr else ""
+        output = stderr.decode().strip() if stderr else "" # ffmpeg often prints info to stderr
         
+        # Regex from new file for consistency, though old one was functional
         duration = re.search("Duration:\\s*(\\d*):(\\d*):(\\d+\\.?\\d*)[\\s\\w*$]", output)
         bitrates = re.search("bitrate:\\s*(\\d+)[\\s\\w*$]", output)
 
@@ -241,6 +254,7 @@ async def media_info(saved_file_path):
         LOGGER.error(f"Error getting media info: {e}")
         return None, None
 
+# Updated take_screen_shot to include more video extensions and quality flag (from new file)
 async def take_screen_shot(video_file, output_directory, ttl):
     """Generate video thumbnail"""
     try:
@@ -249,17 +263,17 @@ async def take_screen_shot(video_file, output_directory, ttl):
             str(time.time()) + ".jpg"
         )
         
-        if video_file.upper().endswith(("MKV", "MP4", "WEBM", "AVI", "MOV", "FLV", "WMV")):
+        if video_file.upper().endswith(("MKV", "MP4", "WEBM", "AVI", "MOV", "FLV", "WMV")): # Added more extensions
             file_genertor_command = [
                 "ffmpeg",
-                "-y",
+                "-y", # Added -y to overwrite output files without asking
                 "-ss",
                 str(ttl),
                 "-i",
                 video_file,
                 "-vframes",
                 "1",
-                "-q:v",
+                "-q:v", # Added quality flag for better thumbnail generation
                 "2",
                 out_put_file_name
             ]
@@ -289,9 +303,10 @@ async def take_screen_shot(video_file, output_directory, ttl):
         LOGGER.error(f"Error generating thumbnail: {e}")
         return None
 
-# Enhanced media info function
+# Functions below are from ffmpeg (1).py and are included for completeness/enhancement
+
 async def get_media_info_detailed(file_path: str) -> Dict[str, Any]:
-    """Get detailed media information using ffprobe"""
+    """Get detailed media information using ffprobe (from ffmpeg (1).py)"""
     try:
         cmd = [
             'ffprobe', '-v', 'quiet', '-print_format', 'json',
@@ -318,7 +333,7 @@ async def get_media_info_detailed(file_path: str) -> Dict[str, Any]:
         return {}
 
 def parse_media_info(info: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse ffprobe output into useful information"""
+    """Parse ffprobe output into useful information (from ffmpeg (1).py)"""
     try:
         format_info = info.get('format', {})
         streams = info.get('streams', [])
@@ -362,9 +377,8 @@ def parse_media_info(info: Dict[str, Any]) -> Dict[str, Any]:
         LOGGER.error(f"Error parsing media info: {e}")
         return {}
 
-# Check if ffmpeg is available
 async def check_ffmpeg_availability() -> bool:
-    """Check if ffmpeg and ffprobe are available"""
+    """Check if ffmpeg and ffprobe are available (from ffmpeg (1).py)"""
     try:
         # Check ffmpeg
         process = await asyncio.create_subprocess_exec(
@@ -395,4 +409,3 @@ async def check_ffmpeg_availability() -> bool:
     except Exception as e:
         LOGGER.error(f"Error checking ffmpeg availability: {e}")
         return False
-        
