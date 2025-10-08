@@ -304,4 +304,3 @@ class Database:
         except Exception as e:
             LOGGER.error(f"Error closing database connection: {e}")
 
-print("Created database and commands modules")
