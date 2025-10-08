@@ -355,4 +355,3 @@ def mb_to_bytes(mb_value: float) -> int:
     """Convert megabytes to bytes"""
     return int(mb_value * 1024 * 1024)
 
-print("Created display_progress and utils modules")
