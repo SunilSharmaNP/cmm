@@ -1,9 +1,32 @@
-aiohttp
-Pillow
-psutil
-hachoir
-tgcrypto
-Pyrogram==1.4.16
-motor
-https://github.com/Tinche/aiofiles/archive/master.zip
-dnspython
+# 18. requirements.txt - Enhanced dependencies
+
+# Telegram Bot Framework
+pyrogram==2.0.106
+tgcrypto>=1.2.0
+
+# Async HTTP and file operations  
+aiohttp>=3.8.0
+aiofiles>=22.1.0
+
+# Database
+motor>=3.0.0
+dnspython>=2.2.0
+
+# Image processing
+Pillow>=9.0.0
+
+# System monitoring and utilities
+psutil>=5.9.0
+humanize>=4.0.0
+
+# Configuration and environment
+python-dotenv>=0.19.0
+
+# Video processing dependencies (handled by system FFmpeg)
+# FFmpeg must be installed separately on the system
+
+# Development and debugging tools (optional)
+# Uncomment these for development:
+# black>=22.0.0
+# flake8>=4.0.0
+# pytest>=7.0.0
