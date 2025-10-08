@@ -80,6 +80,3 @@ logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.info("Enhanced VideoCompress Bot v2.0 initialized successfully!")
-'''
-
-print("Created bot/__init__.py")
