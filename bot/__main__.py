@@ -76,10 +76,7 @@ class EnhancedVideoCompressBot:
                 sleep_threshold=10,
                 parse_mode=ParseMode.HTML
             )
-            
-            # Set parse mode
-            self.app.set_parse_mode("html")
-            
+               
             # Register all handlers
             await self.register_handlers()
             
