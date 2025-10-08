@@ -1,5 +1,4 @@
-# 25. README.md - Comprehensive documentation
-repository_files['README.md'] = '''# 🎬 Enhanced VideoCompress Bot v2.0
+🎬 Enhanced VideoCompress Bot v2.0
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Pyrogram](https://img.shields.io/badge/Pyrogram-2.0+-green.svg)](https://pyrogram.org/)
