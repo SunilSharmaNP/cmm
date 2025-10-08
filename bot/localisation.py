@@ -111,4 +111,3 @@ class Localisation:
         "🔔 <b>Notifications:</b> {}\\n\\n"
         "💡 Use the buttons below to change settings"
     )
-print("Created main module and localization files")
