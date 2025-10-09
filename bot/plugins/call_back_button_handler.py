@@ -1,227 +1,178 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Enhanced Callback Button Handler for Professional Compression System
-# Handles all button interactions for quality and encoding settings
+# FIXED Enhanced Incoming Message Handler with Button System + Working Log Channel Updates
+# Combines button-based compression system with proper log channel updates
 
+import datetime
 import logging
 import os
 import time
 import asyncio
-from typing import Optional
-from pyrogram import Client
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import json
+from typing import Optional, Dict, Any
 from pyrogram.enums import ParseMode
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant, UsernameNotOccupied
 
 try:
     from bot.database import Database
 except ImportError:
     Database = None
 
+from bot.localisation import Localisation
 from bot import (
     DOWNLOAD_LOCATION,
     AUTH_USERS,
     LOG_CHANNEL,
+    UPDATES_CHANNEL,
     DATABASE_URL,
-    SESSION_NAME
+    SESSION_NAME,
+    ALLOWED_FILE_TYPES,
+    TG_MAX_FILE_SIZE
 )
 
-# Import from the new message handler
-from bot.plugins.incoming_message_fn import (
-    USER_SESSIONS,
-    CURRENT_PROCESSES,
-    handle_quality_selection,
-    handle_encoding_setting,
-    start_compression_process,
-    cleanup_process,
-    cleanup_files_and_process,
-    QUALITY_PRESETS,
-    ENCODING_SETTINGS
+from bot.helper_funcs.ffmpeg import (
+    convert_video,
+    media_info,
+    take_screen_shot
 )
 
-from bot.helper_funcs.display_progress import humanbytes, TimeFormatter
-from bot.helper_funcs.utils import delete_downloads
+from bot.helper_funcs.display_progress import (
+    progress_for_pyrogram,
+    TimeFormatter,
+    humanbytes
+)
+
+from bot.helper_funcs.utils import (
+    delete_downloads,
+    ValidationUtils
+)
 
 LOGGER = logging.getLogger(__name__)
 
-async def button(bot: Client, callback_query: CallbackQuery):
-    """Enhanced callback button handler for compression system"""
+# Initialize database if available
+db = None
+if Database and DATABASE_URL:
     try:
-        cb_data = callback_query.data
-        user_id = callback_query.from_user.id
-        
-        LOGGER.info(f"Callback from user {user_id}: {cb_data}")
-
-        # Handle quality selection
-        if cb_data.startswith('quality_'):
-            quality = cb_data.replace('quality_', '')
-            if quality == "custom":
-                await handle_custom_quality_selection(bot, callback_query)
-            else:
-                await handle_quality_selection(bot, callback_query, quality)
-
-        # Handle encoding settings
-        elif cb_data.startswith('setting_'):
-            setting_type = cb_data.replace('setting_', '')
-            await handle_encoding_setting(bot, callback_query, setting_type)
-
-        # Handle specific setting values
-        elif cb_data.startswith('set_'):
-            await handle_setting_value_change(bot, callback_query, cb_data)
-
-        # Handle navigation
-        elif cb_data == 'back_to_quality':
-            await show_quality_selection(bot, callback_query)
-        
-        elif cb_data == 'back_to_encoding':
-            await show_encoding_settings(bot, callback_query)
-
-        # Handle compression control
-        elif cb_data == 'start_encoding':
-            await start_compression_process(bot, callback_query)
-
-        elif cb_data == 'cancel_compression':
-            await handle_cancel_compression(bot, callback_query)
-
-        elif cb_data == 'confirm_cancel':
-            await confirm_cancel_compression(bot, callback_query)
-
-        elif cb_data == 'keep_process':
-            await callback_query.answer("✅ Process continued.", show_alert=True)
-
-        # Handle other callbacks
-        elif cb_data == 'help':
-            await show_help_message(bot, callback_query)
-
-        elif cb_data == 'settings':
-            await show_user_settings(bot, callback_query)
-
-        elif cb_data == 'status':
-            await show_bot_status(bot, callback_query)
-
-        else:
-            await callback_query.answer("⚠️ Unknown action!", show_alert=True)
-
+        db = Database(DATABASE_URL, SESSION_NAME)
     except Exception as e:
-        LOGGER.error(f"Error in button handler: {e}")
-        await callback_query.answer("❌ An error occurred!", show_alert=True)
+        LOGGER.error(f"Database initialization failed: {e}")
 
-async def handle_custom_quality_selection(bot: Client, callback_query: CallbackQuery):
-    """Handle custom quality selection"""
+# Track current processes and user sessions
+CURRENT_PROCESSES = {}
+USER_SESSIONS = {}
+
+class CompressionSettings:
+    """Store user's compression settings"""
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        self.video_message = None
+        self.quality = None
+        self.resolution = None
+        self.video_codec = "libx264"
+        self.audio_codec = "aac"
+        self.preset = "medium"
+        self.crf = 23
+        self.audio_bitrate = "128k"
+        self.pixel_format = "yuv420p"
+        self.created_at = time.time()
+
+# Quality presets mapping
+QUALITY_PRESETS = {
+    "1080p": {"resolution": "1920x1080", "crf": 18, "preset": "slow"},
+    "1080p_hevc": {"resolution": "1920x1080", "crf": 20, "preset": "medium", "codec": "libx265"},
+    "720p": {"resolution": "1280x720", "crf": 20, "preset": "medium"},
+    "720p_hevc": {"resolution": "1280x720", "crf": 22, "preset": "medium", "codec": "libx265"},
+    "480p": {"resolution": "854x480", "crf": 23, "preset": "fast"},
+    "480p_hevc": {"resolution": "854x480", "crf": 25, "preset": "fast", "codec": "libx265"},
+    "custom": {"crf": 23, "preset": "medium"}
+}
+
+async def incoming_start_message_f(bot: Client, update: Message):
+    """Enhanced /start command handler"""
     try:
-        user_id = callback_query.from_user.id
-        
-        if user_id not in USER_SESSIONS:
-            await callback_query.answer("❌ Session expired. Please send video again.", show_alert=True)
+        # Add user to database if available
+        if db and not await db.is_user_exist(update.from_user.id):
+            await db.add_user(
+                update.from_user.id,
+                update.from_user.username,
+                update.from_user.first_name
+            )
+
+        # Update last activity
+        if db:
+            await db.update_user_activity(update.from_user.id)
+
+        # Check force subscription
+        if UPDATES_CHANNEL and not await check_subscription(bot, update):
             return
 
-        session = USER_SESSIONS[user_id]
-        session.quality = "custom"
-
-        # Show resolution selection for custom quality
-        resolution_keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton('🔥 4K (3840x2160)', callback_data='set_resolution_3840x2160'),
-                InlineKeyboardButton('📺 1440p (2560x1440)', callback_data='set_resolution_2560x1440')
-            ],
-            [
-                InlineKeyboardButton('🎬 1080p (1920x1080)', callback_data='set_resolution_1920x1080'),
-                InlineKeyboardButton('📱 720p (1280x720)', callback_data='set_resolution_1280x720')
-            ],
-            [
-                InlineKeyboardButton('📱 480p (854x480)', callback_data='set_resolution_854x480'),
-                InlineKeyboardButton('📱 360p (640x360)', callback_data='set_resolution_640x360')
-            ],
-            [
-                InlineKeyboardButton('🔄 Keep Original', callback_data='set_resolution_original'),
-                InlineKeyboardButton('🔙 Back', callback_data='back_to_quality')
-            ]
-        ])
-
-        await callback_query.edit_message_text(
-            f"⚙️ **Custom Quality Selected**\n\n"
-            f"📏 **Select Output Resolution:**\n\n"
-            f"🔹 Higher resolution = Better quality + Larger file\n"
-            f"🔹 Lower resolution = Faster encoding + Smaller file\n"
-            f"🔹 Original = Keep source resolution",
-            reply_markup=resolution_keyboard
+        # Send enhanced start message
+        await bot.send_message(
+            chat_id=update.chat.id,
+            text=Localisation.START_TEXT,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton('📖 Help', callback_data='help'),
+                    InlineKeyboardButton('⚙️ Settings', callback_data='settings')
+                ],
+                [
+                    InlineKeyboardButton('📊 Status', callback_data='status')
+                ],
+                [
+                    InlineKeyboardButton('🔗 Updates Channel', url='https://t.me/Discovery_Updates'),
+                    InlineKeyboardButton('💬 Support Group', url='https://t.me/linux_repo')
+                ]
+            ]),
+            reply_to_message_id=update.id
         )
 
     except Exception as e:
-        LOGGER.error(f"Error in custom quality selection: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
+        LOGGER.error(f"Error in start handler: {e}")
+        await update.reply_text("❌ An error occurred. Please try again later.")
 
-async def handle_setting_value_change(bot: Client, callback_query: CallbackQuery, cb_data: str):
-    """Handle specific setting value changes"""
+async def handle_video_message(bot: Client, update: Message):
+    """Handle incoming video messages and show quality selection buttons"""
     try:
-        user_id = callback_query.from_user.id
-        
-        if user_id not in USER_SESSIONS:
-            await callback_query.answer("❌ Session expired. Please send video again.", show_alert=True)
+        # Check if user exists and update activity
+        if db and not await db.is_user_exist(update.from_user.id):
+            await db.add_user(
+                update.from_user.id,
+                update.from_user.username,
+                update.from_user.first_name
+            )
+
+        if db:
+            await db.update_user_activity(update.from_user.id)
+
+        # Check subscription
+        if UPDATES_CHANNEL and not await check_subscription(bot, update):
             return
 
-        session = USER_SESSIONS[user_id]
-
-        # Parse callback data
-        if cb_data.startswith('set_crf_'):
-            crf_value = int(cb_data.replace('set_crf_', ''))
-            session.crf = crf_value
-            await callback_query.answer(f"✅ CRF set to {crf_value}")
-
-        elif cb_data.startswith('set_audio_bitrate_'):
-            bitrate = cb_data.replace('set_audio_bitrate_', '')
-            session.audio_bitrate = bitrate
-            await callback_query.answer(f"✅ Audio bitrate set to {bitrate}")
-
-        elif cb_data.startswith('set_preset_'):
-            preset = cb_data.replace('set_preset_', '')
-            if preset:  # Check if preset is not empty
-                session.preset = preset
-                await callback_query.answer(f"✅ Preset set to {preset}")
-
-        elif cb_data.startswith('set_video_codec_'):
-            codec = cb_data.replace('set_video_codec_', '')
-            session.video_codec = codec
-            await callback_query.answer(f"✅ Video codec set to {codec}")
-
-        elif cb_data.startswith('set_audio_codec_'):
-            codec = cb_data.replace('set_audio_codec_', '')
-            session.audio_codec = codec
-            await callback_query.answer(f"✅ Audio codec set to {codec}")
-
-        elif cb_data.startswith('set_pixel_format_'):
-            pixel_format = cb_data.replace('set_pixel_format_', '')
-            session.pixel_format = pixel_format
-            await callback_query.answer(f"✅ Pixel format set to {pixel_format}")
-
-        elif cb_data.startswith('set_resolution_'):
-            resolution = cb_data.replace('set_resolution_', '')
-            if resolution == 'original':
-                session.resolution = None
-                await callback_query.answer("✅ Resolution set to Original")
-            else:
-                session.resolution = resolution
-                await callback_query.answer(f"✅ Resolution set to {resolution}")
-
-        # Return to encoding settings after change
-        await show_encoding_settings(bot, callback_query)
-
-    except Exception as e:
-        LOGGER.error(f"Error changing setting value: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def show_quality_selection(bot: Client, callback_query: CallbackQuery):
-    """Show quality selection menu"""
-    try:
-        user_id = callback_query.from_user.id
-        
-        if user_id not in USER_SESSIONS:
-            await callback_query.answer("❌ Session expired. Please send video again.", show_alert=True)
+        # Validate video file
+        video = update.video or update.document
+        if not video:
             return
 
-        session = USER_SESSIONS[user_id]
-        video_message = session.video_message
-        video = video_message.video or video_message.document
+        if not await validate_video_file(video, update):
+            return
 
+        # Check if user has active process
+        if update.from_user.id in CURRENT_PROCESSES:
+            await update.reply_text(
+                "⚠️ You already have a compression in progress!\n"
+                "⏰ Please wait for it to complete."
+            )
+            return
+
+        # Store video message in user session
+        session = CompressionSettings(update.from_user.id)
+        session.video_message = update
+        USER_SESSIONS[update.from_user.id] = session
+
+        # Send quality selection keyboard
         quality_keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton('🔥 1080p', callback_data='quality_1080p'),
@@ -241,7 +192,7 @@ async def show_quality_selection(bot: Client, callback_query: CallbackQuery):
             ]
         ])
 
-        await callback_query.edit_message_text(
+        await update.reply_text(
             f"🎬 **Video Received!**\n\n"
             f"📄 **File:** {video.file_name or 'Unknown'}\n"
             f"📏 **Size:** {humanbytes(video.file_size)}\n"
@@ -251,10 +202,499 @@ async def show_quality_selection(bot: Client, callback_query: CallbackQuery):
         )
 
     except Exception as e:
-        LOGGER.error(f"Error showing quality selection: {e}")
+        LOGGER.error(f"Error handling video message: {e}")
+        await update.reply_text("❌ An error occurred while processing your video.")
+
+async def start_compression_process(bot: Client, callback_query):
+    """Start the actual compression process with FULL LOG CHANNEL SUPPORT"""
+    try:
+        user_id = callback_query.from_user.id
+        
+        if user_id not in USER_SESSIONS:
+            await callback_query.answer("❌ Session expired. Please send video again.", show_alert=True)
+            return
+
+        if user_id in CURRENT_PROCESSES:
+            await callback_query.answer("❌ You already have an active compression!", show_alert=True)
+            return
+
+        session = USER_SESSIONS[user_id]
+        video_message = session.video_message
+        video = video_message.video or video_message.document
+
+        # Mark user as having active process
+        CURRENT_PROCESSES[user_id] = True
+
+        # Generate file paths
+        user_file = f"{user_id}_{int(time.time())}.mkv"
+        saved_file_path = os.path.join(DOWNLOAD_LOCATION, user_file)
+
+        # Start timing
+        d_start = time.time()
+        
+        # Update message to show compression started
+        sent_message = await callback_query.edit_message_text(
+            f"🚀 **Encoding Started!**\n\n"
+            f"⚙️ **Settings:**\n"
+            f"🔹 **Quality:** {session.quality}\n"
+            f"🔹 **CRF:** {session.crf}\n"
+            f"🔹 **Preset:** {session.preset}\n"
+            f"🔹 **Resolution:** {session.resolution or 'Original'}\n"
+            f"🔹 **Codec:** {session.video_codec}\n\n"
+            f"📥 **Starting download...**"
+        )
+
+        # ========== LOG CHANNEL: Download Start ==========
+        download_start = None
+        if LOG_CHANNEL:
+            try:
+                utc_now = datetime.datetime.utcnow()
+                ist_now = utc_now + datetime.timedelta(minutes=30, hours=5)
+                ist = ist_now.strftime("%d/%m/%Y, %H:%M:%S")
+                
+                download_start = await bot.send_message(
+                    LOG_CHANNEL,
+                    f"🔥 **Bot Busy Now!** \n\n"
+                    f"👤 **User:** {callback_query.from_user.first_name} ({callback_query.from_user.id})\n"
+                    f"📁 **File:** {video.file_name or 'Unknown'}\n"
+                    f"📏 **Size:** {humanbytes(video.file_size)}\n"
+                    f"🎯 **Quality:** {session.quality}\n"
+                    f"🔹 **CRF:** {session.crf}\n"
+                    f"🔹 **Codec:** {session.video_codec}\n"
+                    f"⏰ **Started:** `{ist}` (GMT+05:30)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                LOGGER.warning(f"Could not send download start log: {e}")
+
+        # Create status file for tracking
+        status = os.path.join(DOWNLOAD_LOCATION, "status.json")
+        status_data = {
+            'running': True,
+            'message': sent_message.id,
+            'user_id': user_id
+        }
+        
+        with open(status, 'w') as f:
+            json.dump(status_data, f, indent=2)
+
+        # Start download with progress
+        try:
+            video_download = await bot.download_media(
+                message=video_message,
+                file_name=saved_file_path,
+                progress=progress_for_pyrogram,
+                progress_args=(
+                    "Downloading",
+                    sent_message,
+                    d_start,
+                    bot
+                )
+            )
+
+            if not video_download or not os.path.exists(video_download):
+                await cleanup_process_with_logs(user_id, sent_message, download_start, "Download failed", bot)
+                return
+
+        except Exception as e:
+            LOGGER.error(f"Download error: {e}")
+            await cleanup_process_with_logs(user_id, sent_message, download_start, f"Download failed: {e}", bot)
+            return
+
+        # Get media info
+        duration, bitrate = await media_info(saved_file_path)
+        if duration is None:
+            await cleanup_process_with_logs(user_id, sent_message, download_start, "Invalid video file", bot)
+            return
+
+        # Generate thumbnail
+        thumb_image_path = await take_screen_shot(
+            saved_file_path,
+            os.path.dirname(saved_file_path),
+            duration / 2
+        )
+
+        # ========== LOG CHANNEL: Compression Start ==========
+        compress_start = None
+        if LOG_CHANNEL and download_start:
+            try:
+                await download_start.delete()
+                utc_now = datetime.datetime.utcnow()
+                ist_now = utc_now + datetime.timedelta(minutes=30, hours=5)
+                ist = ist_now.strftime("%d/%m/%Y, %H:%M:%S")
+                
+                compress_start = await bot.send_message(
+                    LOG_CHANNEL,
+                    f"🎬 **Compressing Video...** \n\n"
+                    f"👤 **User:** {callback_query.from_user.first_name} ({callback_query.from_user.id})\n"
+                    f"⏱️ **Duration:** {TimeFormatter(duration * 1000)}\n"
+                    f"🎯 **Quality:** {session.quality}\n"
+                    f"🔹 **CRF:** {session.crf}\n"
+                    f"🔹 **Preset:** {session.preset}\n"
+                    f"🔹 **Codec:** {session.video_codec}\n"
+                    f"⏰ **Started:** `{ist}` (GMT+05:30)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                LOGGER.warning(f"Could not send compression start log: {e}")
+
+        # Start compression
+        await sent_message.edit_text(
+            f"🎬 **Compressing Video...**\n\n"
+            f"⚙️ **Using your settings:**\n"
+            f"🔹 **Quality:** {session.quality}\n"
+            f"🔹 **CRF:** {session.crf}\n"
+            f"🔹 **Preset:** {session.preset}\n"
+            f"⏳ **Please wait...**"
+        )
+
+        c_start = time.time()
+        
+        # Use custom compression with user settings - FIXED to pass session
+        compressed_file = await convert_video_with_custom_settings(
+            saved_file_path,
+            DOWNLOAD_LOCATION,
+            duration,
+            bot,
+            sent_message,
+            session,
+            compress_start  # Pass log message for updates
+        )
+
+        if not compressed_file or not os.path.exists(compressed_file):
+            await cleanup_process_with_logs(user_id, sent_message, compress_start, "Compression failed", bot)
+            return
+
+        # ========== LOG CHANNEL: Upload Start ==========
+        upload_start = None
+        if LOG_CHANNEL and compress_start:
+            try:
+                await compress_start.delete()
+                utc_now = datetime.datetime.utcnow()
+                ist_now = utc_now + datetime.timedelta(minutes=30, hours=5)
+                ist = ist_now.strftime("%d/%m/%Y, %H:%M:%S")
+                
+                upload_start = await bot.send_message(
+                    LOG_CHANNEL,
+                    f"📤 **Uploading Video...** \n\n"
+                    f"👤 **User:** {callback_query.from_user.first_name} ({callback_query.from_user.id})\n"
+                    f"⏰ **Started:** `{ist}` (GMT+05:30)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                LOGGER.warning(f"Could not send upload start log: {e}")
+
+        # Upload compressed file
+        await sent_message.edit_text(
+            f"📤 **Uploading compressed video...**\n"
+            f"⏳ **Please wait...**"
+        )
+
+        u_start = time.time()
+        
+        # Calculate compression stats
+        original_size = os.path.getsize(saved_file_path)
+        compressed_size = os.path.getsize(compressed_file)
+        compression_ratio = ((original_size - compressed_size) / original_size) * 100
+
+        # Create detailed caption
+        downloaded_time = TimeFormatter((c_start - d_start) * 1000)
+        compressed_time = TimeFormatter((time.time() - c_start) * 1000)
+
+        caption = (
+            f"✅ **Compression Completed!**\n\n"
+            f"📊 **Statistics:**\n"
+            f"🔹 **Original:** {humanbytes(original_size)}\n"
+            f"🔹 **Compressed:** {humanbytes(compressed_size)}\n"
+            f"🔹 **Saved:** {compression_ratio:.1f}%\n\n"
+            f"⚙️ **Settings Used:**\n"
+            f"🔹 **Quality:** {session.quality}\n"
+            f"🔹 **CRF:** {session.crf}\n"
+            f"🔹 **Codec:** {session.video_codec}\n"
+            f"🔹 **Preset:** {session.preset}\n\n"
+            f"⏱️ **Time Breakdown:**\n"
+            f"📥 **Download:** {downloaded_time}\n"
+            f"🎬 **Compress:** {compressed_time}\n"
+            f"📤 **Upload:** {}\n\n"  # Upload time will be filled later
+            f"🎉 **Total:** {TimeFormatter((time.time() - d_start) * 1000)}"
+        )
+
+        upload = await bot.send_video(
+            chat_id=callback_query.message.chat.id,
+            video=compressed_file,
+            caption=caption,
+            supports_streaming=True,
+            duration=int(duration),
+            thumb=thumb_image_path,
+            reply_to_message_id=video_message.id,
+            progress=progress_for_pyrogram,
+            progress_args=(
+                "Uploading",
+                sent_message,
+                u_start,
+                bot
+            )
+        )
+
+        if upload:
+            # Update caption with upload time
+            uploaded_time = TimeFormatter((time.time() - u_start) * 1000)
+            
+            try:
+                await upload.edit_caption(
+                    caption=upload.caption.format(uploaded_time)
+                )
+            except:
+                pass
+
+            # Update database stats
+            if db:
+                try:
+                    await db.increment_user_compression(user_id, original_size)
+                except:
+                    pass
+
+            # ========== LOG CHANNEL: Upload Complete ==========
+            if LOG_CHANNEL and upload_start:
+                try:
+                    await upload_start.delete()
+                    utc_now = datetime.datetime.utcnow()
+                    ist_now = utc_now + datetime.timedelta(minutes=30, hours=5)
+                    ist = ist_now.strftime("%d/%m/%Y, %H:%M:%S")
+                    
+                    await bot.send_message(
+                        LOG_CHANNEL,
+                        f"✅ **Upload Completed!** \n\n"
+                        f"👤 **User:** {callback_query.from_user.first_name} ({callback_query.from_user.id})\n"
+                        f"⏰ **Completed:** `{ist}` (GMT+05:30)\n"
+                        f"📊 **Stats:**\n"
+                        f"🔹 **Original:** {humanbytes(original_size)}\n"
+                        f"🔹 **Compressed:** {humanbytes(compressed_size)}\n"
+                        f"🔹 **Saved:** {compression_ratio:.1f}%\n"
+                        f"🔹 **Quality:** {session.quality} (CRF {session.crf})\n"
+                        f"⏱️ **Total Time:** {TimeFormatter((time.time() - d_start) * 1000)}\n\n"
+                        f"🎉 **Bot is Free Now!**",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                except Exception as e:
+                    LOGGER.warning(f"Could not send upload complete log: {e}")
+
+            # Delete progress message
+            await sent_message.delete()
+            
+            # Log success
+            LOGGER.info(f"Compression completed successfully for user {user_id}")
+
+        # Cleanup
+        await cleanup_files_and_process(user_id, [saved_file_path, compressed_file, thumb_image_path])
+
+    except Exception as e:
+        LOGGER.error(f"Error in compression process: {e}")
+        if user_id in CURRENT_PROCESSES:
+            del CURRENT_PROCESSES[user_id]
+        if user_id in USER_SESSIONS:
+            del USER_SESSIONS[user_id]
+        await callback_query.message.edit_text("❌ An error occurred during compression.")
+
+async def convert_video_with_custom_settings(video_file, output_directory, total_time, bot, message, session, log_message=None):
+    """Convert video with custom settings from button system"""
+    return await convert_video(
+        video_file=video_file,
+        output_directory=output_directory,
+        total_time=total_time,
+        bot=bot,
+        message=message,
+        target_percentage=f"{session.quality}_CRF{session.crf}",
+        isAuto=False,
+        bug=log_message
+    )
+
+# Keep existing legacy function for compatibility
+async def incoming_compress_message_f(bot: Client, update: Message):
+    """Legacy /compress command - now shows new system message"""
+    await update.reply_text(
+        "ℹ️ **New Button System Active!**\n\n"
+        "🎬 Simply send me a video file and I'll show you quality options!\n"
+        "📱 No need for /compress command anymore.\n\n"
+        "✨ **New Features:**\n"
+        "• Professional quality presets\n"
+        "• Custom encoding settings\n"
+        "• Real-time progress tracking\n"
+        "• Detailed compression statistics"
+    )
+
+async def incoming_cancel_message_f(bot: Client, update: Message):
+    """Enhanced /cancel command handler"""
+    try:
+        if update.from_user.id not in AUTH_USERS:
+            await update.reply_text("❌ You don't have permission to use this command.")
+            return
+
+        user_id = update.from_user.id
+        
+        if user_id in CURRENT_PROCESSES or user_id in USER_SESSIONS:
+            await update.reply_text(
+                "🗑️ **Cancel Current Process?**\n\n"
+                "⚠️ This will stop any active compression!\n"
+                "❌ This action cannot be undone!",
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton('✅ Yes, Cancel', callback_data='confirm_cancel'),
+                        InlineKeyboardButton('❌ No, Keep', callback_data='keep_process')
+                    ]
+                ])
+            )
+        else:
+            await update.reply_text("❌ No active process found.")
+
+    except Exception as e:
+        LOGGER.error(f"Error in cancel handler: {e}")
+        await update.reply_text("❌ An error occurred.")
+
+# Helper functions with LOG CHANNEL SUPPORT
+
+async def cleanup_process_with_logs(user_id: int, sent_message, log_message, reason: str, bot: Client):
+    """Enhanced cleanup with proper log channel updates"""
+    try:
+        if user_id in CURRENT_PROCESSES:
+            del CURRENT_PROCESSES[user_id]
+        
+        if user_id in USER_SESSIONS:
+            del USER_SESSIONS[user_id]
+
+        await sent_message.edit_text(f"❌ **Process Failed**\n\n🔍 **Reason:** {reason}")
+
+        # Send failure log to channel
+        if LOG_CHANNEL:
+            try:
+                if log_message:
+                    await log_message.delete()
+                
+                await bot.send_message(
+                    LOG_CHANNEL,
+                    f"❌ **Process Failed - Bot is Free Now!**\n\n"
+                    f"👤 **User:** {sent_message.from_user.first_name if hasattr(sent_message, 'from_user') else 'Unknown'} ({user_id})\n"
+                    f"🔍 **Reason:** {reason}\n"
+                    f"⏰ **Time:** {datetime.datetime.utcnow().strftime('%d/%m/%Y, %H:%M:%S')} UTC",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                LOGGER.warning(f"Could not send failure log: {e}")
+
+        await delete_downloads()
+
+    except Exception as e:
+        LOGGER.error(f"Cleanup error: {e}")
+
+async def cleanup_files_and_process(user_id: int, files: list):
+    """Cleanup files and process"""
+    try:
+        if user_id in CURRENT_PROCESSES:
+            del CURRENT_PROCESSES[user_id]
+        
+        if user_id in USER_SESSIONS:
+            del USER_SESSIONS[user_id]
+
+        for file_path in files:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+
+        # Clean up status file
+        status = os.path.join(DOWNLOAD_LOCATION, "status.json")
+        if os.path.exists(status):
+            try:
+                os.remove(status)
+            except:
+                pass
+
+        await delete_downloads()
+
+    except Exception as e:
+        LOGGER.error(f"File cleanup error: {e}")
+
+async def check_subscription(bot: Client, update: Message) -> bool:
+    """Check if user is subscribed to updates channel"""
+    try:
+        user = await bot.get_chat_member(UPDATES_CHANNEL, update.from_user.id)
+        if user.status == "kicked":
+            await update.reply_text(
+                "🚫 **You are banned from the updates channel.**\n"
+                "📞 Contact support group for assistance.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('💬 Support Group', url='https://t.me/linux_repo')
+                ]])
+            )
+            return False
+    except UserNotParticipant:
+        await update.reply_text(
+            "📢 **Please join our updates channel to use this bot!**",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    '🔗 Join Updates Channel',
+                    url=f'https://t.me/{UPDATES_CHANNEL}'
+                )
+            ]])
+        )
+        return False
+    except Exception as e:
+        LOGGER.error(f"Error checking subscription: {e}")
+        return False
+
+    return True
+
+async def validate_video_file(video, update: Message) -> bool:
+    """Validate video file for compression"""
+    if video.file_size > TG_MAX_FILE_SIZE:
+        max_size_mb = TG_MAX_FILE_SIZE // (1024 * 1024)
+        await update.reply_text(
+            f"❌ **File too large!**\n\n"
+            f"📏 **Size:** {humanbytes(video.file_size)}\n"
+            f"🔢 **Limit:** {max_size_mb}MB"
+        )
+        return False
+
+    if hasattr(video, 'file_name') and video.file_name:
+        if not ValidationUtils.validate_file_extension(video.file_name, ALLOWED_FILE_TYPES):
+            await update.reply_text("❌ **Unsupported file format!**")
+            return False
+
+    return True
+
+# Quality handling functions for button system
+
+async def handle_quality_selection(bot: Client, callback_query, quality: str):
+    """Handle quality selection from user"""
+    try:
+        user_id = callback_query.from_user.id
+        
+        if user_id not in USER_SESSIONS:
+            await callback_query.answer("❌ Session expired. Please send video again.", show_alert=True)
+            return
+
+        session = USER_SESSIONS[user_id]
+        session.quality = quality
+
+        # Set preset values based on quality selection
+        if quality in QUALITY_PRESETS:
+            preset = QUALITY_PRESETS[quality]
+            session.resolution = preset.get("resolution")
+            session.crf = preset["crf"]
+            session.preset = preset["preset"]
+            
+            if "codec" in preset and preset["codec"] == "libx265":
+                session.video_codec = "libx265"
+
+        # Show encoding settings keyboard
+        await show_encoding_settings(bot, callback_query)
+
+    except Exception as e:
+        LOGGER.error(f"Error in quality selection: {e}")
         await callback_query.answer("❌ An error occurred.", show_alert=True)
 
-async def show_encoding_settings(bot: Client, callback_query: CallbackQuery):
+async def show_encoding_settings(bot: Client, callback_query):
     """Show encoding settings menu"""
     try:
         user_id = callback_query.from_user.id
@@ -307,264 +747,3 @@ async def show_encoding_settings(bot: Client, callback_query: CallbackQuery):
     except Exception as e:
         LOGGER.error(f"Error showing encoding settings: {e}")
         await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def handle_cancel_compression(bot: Client, callback_query: CallbackQuery):
-    """Handle compression cancellation"""
-    try:
-        user_id = callback_query.from_user.id
-
-        # If user has an active process, ask for confirmation
-        if user_id in CURRENT_PROCESSES:
-            await callback_query.edit_message_text(
-                "🗑️ **Cancel Active Compression?**\n\n"
-                "⚠️ This will stop the current compression process!\n"
-                "❌ This action cannot be undone!",
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton('✅ Yes, Cancel', callback_data='confirm_cancel'),
-                        InlineKeyboardButton('❌ No, Continue', callback_data='keep_process')
-                    ]
-                ])
-            )
-        else:
-            # Just clean up session
-            if user_id in USER_SESSIONS:
-                del USER_SESSIONS[user_id]
-            
-            await callback_query.edit_message_text(
-                "❌ **Process Cancelled**\n\n"
-                "🔄 You can send a new video anytime to start again."
-            )
-
-    except Exception as e:
-        LOGGER.error(f"Error handling cancel: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def confirm_cancel_compression(bot: Client, callback_query: CallbackQuery):
-    """Confirm and execute compression cancellation"""
-    try:
-        user_id = callback_query.from_user.id
-
-        # Cancel active process
-        if user_id in CURRENT_PROCESSES:
-            del CURRENT_PROCESSES[user_id]
-
-        # Clean up session
-        if user_id in USER_SESSIONS:
-            del USER_SESSIONS[user_id]
-
-        # Clean up any temporary files
-        try:
-            status_file = os.path.join(DOWNLOAD_LOCATION, "status.json")
-            if os.path.exists(status_file):
-                with open(status_file, 'r') as f:
-                    status_data = json.load(f)
-                    if status_data.get('user_id') == user_id:
-                        # Kill FFmpeg process if running
-                        pid = status_data.get('pid')
-                        if pid:
-                            try:
-                                os.kill(pid, 9)  # Force kill
-                                LOGGER.info(f"Killed process {pid} for user {user_id}")
-                            except:
-                                pass
-                        os.remove(status_file)
-        except:
-            pass
-
-        await delete_downloads()
-
-        await callback_query.edit_message_text(
-            "✅ **Compression Cancelled Successfully**\n\n"
-            "🔄 You can send a new video anytime to start again."
-        )
-
-        # Log cancellation
-        LOGGER.info(f"Compression cancelled by user {user_id}")
-
-    except Exception as e:
-        LOGGER.error(f"Error confirming cancel: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def show_help_message(bot: Client, callback_query: CallbackQuery):
-    """Show help message"""
-    try:
-        help_text = (
-            "📖 **How to Use Enhanced Video Compressor**\n\n"
-            "🎬 **Step 1:** Send me any video file (up to 2GB)\n"
-            "🎯 **Step 2:** Select quality preset (1080p, 720p, 480p, etc.)\n"
-            "⚙️ **Step 3:** Customize encoding settings if needed\n"
-            "🚀 **Step 4:** Start encoding and wait for result\n\n"
-            "🔹 **Quality Presets:**\n"
-            "• **1080p/720p/480p:** Standard H.264 encoding\n"
-            "• **HEVC versions:** Better compression, smaller files\n"
-            "• **Custom:** Full control over all settings\n\n"
-            "🔹 **Encoding Settings:**\n"
-            "• **CRF:** Quality control (15=best, 30=lowest)\n"
-            "• **Preset:** Speed vs compression trade-off\n"
-            "• **Codec:** H.264 (compatible) or H.265 (efficient)\n\n"
-            "💡 **Tips:**\n"
-            "• Lower CRF = better quality but larger files\n"
-            "• Slower presets = better compression\n"
-            "• HEVC codec = 50% smaller files\n"
-            "• Keep original resolution for best quality"
-        )
-
-        await callback_query.edit_message_text(
-            help_text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('🔙 Back', callback_data='back_to_start')
-            ]])
-        )
-
-    except Exception as e:
-        LOGGER.error(f"Error showing help: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def show_user_settings(bot: Client, callback_query: CallbackQuery):
-    """Show user settings"""
-    try:
-        user_id = callback_query.from_user.id
-        
-        # Get user stats from database if available
-        user_stats = "📊 **Your Statistics:**\n\n"
-        
-        try:
-            from bot.database import Database
-            if Database and DATABASE_URL:
-                db = Database(DATABASE_URL, SESSION_NAME)
-                user = await db.get_user(user_id)
-                if user:
-                    user_stats += (
-                        f"🎬 **Total Compressions:** {user.get('total_compressions', 0)}\n"
-                        f"📦 **Data Processed:** {humanbytes(user.get('total_size_compressed', 0))}\n"
-                        f"📅 **Member Since:** {user.get('join_date', 'Unknown')}\n"
-                        f"⏰ **Last Active:** {user.get('last_active', 'Unknown')}\n"
-                    )
-                else:
-                    user_stats += "📝 No statistics available yet."
-        except:
-            user_stats += "📝 Statistics temporarily unavailable."
-
-        settings_text = (
-            f"⚙️ **User Settings**\n\n"
-            f"{user_stats}\n"
-            f"🔹 **Default Quality:** Medium (can be customized per video)\n"
-            f"🔹 **Progress Updates:** Enabled\n"
-            f"🔹 **Notifications:** Enabled\n\n"
-            f"💡 **Pro Tips:**\n"
-            f"• Use HEVC for better compression\n"
-            f"• Lower CRF for higher quality\n"
-            f"• Slower presets for smaller files"
-        )
-
-        await callback_query.edit_message_text(
-            settings_text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('🔙 Back', callback_data='back_to_start')
-            ]])
-        )
-
-    except Exception as e:
-        LOGGER.error(f"Error showing settings: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-async def show_bot_status(bot: Client, callback_query: CallbackQuery):
-    """Show bot status"""
-    try:
-        # Count active processes
-        active_compressions = len(CURRENT_PROCESSES)
-        active_sessions = len(USER_SESSIONS)
-        
-        # Get system info
-        import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        status_text = (
-            f"📊 **Bot Status**\n\n"
-            f"🔹 **Active Compressions:** {active_compressions}\n"
-            f"🔹 **Active Sessions:** {active_sessions}\n"
-            f"🔹 **System Load:** {cpu_percent:.1f}%\n"
-            f"🔹 **Memory Usage:** {memory.percent:.1f}%\n"
-            f"🔹 **Disk Space:** {(disk.used / disk.total * 100):.1f}% used\n\n"
-            f"⚡ **Performance:**\n"
-            f"• Average compression time: 2-5 minutes\n"
-            f"• Supported formats: MP4, MKV, AVI, MOV, WEBM\n"
-            f"• Max file size: {humanbytes(TG_MAX_FILE_SIZE)}\n"
-            f"• Quality presets: 6 options + custom\n\n"
-            f"✅ **All systems operational!**"
-        )
-
-        await callback_query.edit_message_text(
-            status_text,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('🔄 Refresh', callback_data='status'),
-                InlineKeyboardButton('🔙 Back', callback_data='back_to_start')
-            ]])
-        )
-
-    except Exception as e:
-        LOGGER.error(f"Error showing status: {e}")
-        await callback_query.answer("❌ An error occurred.", show_alert=True)
-
-# Handle special navigation callbacks
-async def handle_back_to_start(bot: Client, callback_query: CallbackQuery):
-    """Handle back to start navigation"""
-    try:
-        from bot.localisation import Localisation
-        
-        await callback_query.edit_message_text(
-            Localisation.START_TEXT,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton('📖 Help', callback_data='help'),
-                    InlineKeyboardButton('⚙️ Settings', callback_data='settings')
-                ],
-                [
-                    InlineKeyboardButton('📊 Status', callback_data='status')
-                ],
-                [
-                    InlineKeyboardButton('🔗 Updates Channel', url='https://t.me/Discovery_Updates'),
-                    InlineKeyboardButton('💬 Support Group', url='https://t.me/linux_repo')
-                ]
-            ])
-        )
-    except Exception as e:
-        LOGGER.error(f"Error handling back to start: {e}")
-
-# Additional callback for back_to_start
-async def handle_additional_callbacks(bot: Client, callback_query: CallbackQuery):
-    """Handle additional callback patterns"""
-    cb_data = callback_query.data
-    
-    if cb_data == 'back_to_start':
-        await handle_back_to_start(bot, callback_query)
-    elif cb_data.startswith('set_resolution_'):
-        await handle_setting_value_change(bot, callback_query, cb_data)
-    elif cb_data == 'setting_resolution':
-        await handle_custom_quality_selection(bot, callback_query)
-
-# Update the main button function to handle additional cases
-async def button_enhanced(bot: Client, callback_query: CallbackQuery):
-    """Main enhanced button handler with all cases"""
-    try:
-        await callback_query.answer()  # Acknowledge the callback
-        
-        # Handle all callback types
-        await button(bot, callback_query)
-        
-        # Handle additional cases
-        await handle_additional_callbacks(bot, callback_query)
-        
-    except Exception as e:
-        LOGGER.error(f"Error in enhanced button handler: {e}")
-        try:
-            await callback_query.answer("❌ An error occurred!", show_alert=True)
-        except:
-            pass
-
-# Export the main button handler
-__all__ = ['button_enhanced']
