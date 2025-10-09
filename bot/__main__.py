@@ -56,7 +56,7 @@ from bot.plugins.new_join_fn import (
 )
 
 # Import the enhanced callback handler
-from bot.plugins.enhanced_callback_handler import button_enhanced
+from bot.plugins.call_back_button_handler import button_enhanced
 
 class EnhancedVideoCompressBot:
     def __init__(self):
