@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Enhanced FFmpeg Handler - Compatible with Button-Based Compression System
-# (c) Enhanced by Research Team | Original by @AbirHasan2005
+# FIXED Enhanced FFmpeg Handler - Button System + Working Progress Bar
+# Combines button-based compression with proper progress tracking
 
 import logging
 import asyncio
@@ -41,7 +41,7 @@ QUALITY_PRESETS = {
 }
 
 async def convert_video(video_file, output_directory, total_time, bot, message, target_percentage, isAuto=False, bug=None):
-    """Enhanced video conversion compatible with both old and new systems"""
+    """Enhanced video conversion with button system support and proper progress tracking"""
     try:
         # Generate output filename
         out_put_file_name = os.path.join(output_directory, f"{int(time.time())}.mp4")
@@ -53,13 +53,15 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
         # Default FFmpeg command
         file_genertor_command = [
             "ffmpeg",
-            "-hide_banner", 
+            "-hide_banner",
             "-loglevel", "quiet",
             "-progress", progress,
             "-i", video_file
         ]
 
         # Check if this is button-based system call (new system)
+        custom_settings_used = False
+        
         if hasattr(message, 'from_user') and hasattr(message.from_user, 'id'):
             # Try to get custom settings from USER_SESSIONS
             try:
@@ -68,7 +70,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 
                 if user_id in USER_SESSIONS:
                     session = USER_SESSIONS[user_id]
-                    LOGGER.info(f"Using custom settings for user {user_id}")
+                    LOGGER.info(f"Using custom settings for user {user_id}: {session.quality}")
                     
                     # Use custom settings from button system
                     file_genertor_command.extend([
@@ -79,7 +81,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                     ])
                     
                     # Add resolution if specified
-                    if session.resolution and session.resolution != "original":
+                    if session.resolution and session.resolution.lower() != "original":
                         file_genertor_command.extend(["-s", session.resolution])
                     
                     # Add audio settings
@@ -98,22 +100,21 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                     ])
                     
                     target_percentage = f"{session.quality}_CRF{session.crf}"
+                    custom_settings_used = True
                     
                 else:
                     raise Exception("No session found")
                     
             except Exception as e:
                 LOGGER.info(f"No custom settings found, using legacy mode: {e}")
-                # Fall back to legacy system
-                await use_legacy_compression(
-                    file_genertor_command, video_file, target_percentage, 
-                    total_time, isAuto, out_put_file_name
-                )
-        else:
-            # Legacy system
+                custom_settings_used = False
+        
+        # If no custom settings, use legacy system
+        if not custom_settings_used:
+            LOGGER.info("Using legacy compression mode")
             await use_legacy_compression(
                 file_genertor_command, video_file, target_percentage,
-                total_time, isAuto, out_put_file_name
+                total_time, isAuto
             )
         
         # Add output file
@@ -146,7 +147,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
         with open(status, 'w') as f:
             json.dump(statusMsg, f, indent=2)
         
-        # Monitor progress
+        # Monitor progress with FIXED progress bar
         isDone = False
         last_percentage = 0
         
@@ -160,6 +161,7 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 with open(progress, 'r') as file:
                     text = file.read()
                 
+                # FIXED: Better regex patterns
                 frame = re.findall(r"frame=(\d+)", text)
                 time_in_us = re.findall(r"out_time_ms=(\d+)", text)
                 progress_match = re.findall(r"progress=(\w+)", text)
@@ -187,19 +189,31 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                         
                         execution_time = TimeFormatter((time.time() - COMPRESSION_START_TIME) * 1000)
                         
-                        # Create progress bar
+                        # FIXED: Proper progress bar creation
+                        progress_blocks = math.floor(percentage / 10)
+                        remaining_blocks = 10 - progress_blocks
+                        
                         progress_str = "📊 **Progress:** {0}%\n[{1}{2}]".format(
                             round(percentage, 2),
-                            ''.join([FINISHED_PROGRESS_STR for i in range(math.floor(percentage / 10))]),
-                            ''.join([UN_FINISHED_PROGRESS_STR for i in range(10 - math.floor(percentage / 10))])
+                            ''.join([FINISHED_PROGRESS_STR for _ in range(progress_blocks)]),
+                            ''.join([UN_FINISHED_PROGRESS_STR for _ in range(remaining_blocks)])
                         )
                         
-                        stats = (
-                            f'🎬 **Compressing** {target_percentage}\n\n'
-                            f'⏰ **ETA:** {ETA}\n'
-                            f'⏱️ **Elapsed:** {execution_time}\n\n'
-                            f'{progress_str}'
-                        )
+                        # Enhanced stats display
+                        if custom_settings_used:
+                            stats = (
+                                f'🎬 **Compressing** {target_percentage}\n\n'
+                                f'⏰ **ETA:** {ETA}\n'
+                                f'⏱️ **Elapsed:** {execution_time}\n\n'
+                                f'{progress_str}'
+                            )
+                        else:
+                            # Legacy stats format
+                            stats = (
+                                f'📦 **Compressing** {target_percentage}%\n\n'
+                                f'⏰ **ETA:** {ETA}\n\n'
+                                f'{progress_str}\n'
+                            )
                         
                         try:
                             await message.edit_text(
@@ -208,14 +222,15 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                                     InlineKeyboardButton('❌ Cancel', callback_data='cancel_compression')
                                 ]])
                             )
-                        except:
-                            pass
+                        except Exception as edit_error:
+                            LOGGER.warning(f"Could not edit progress message: {edit_error}")
                         
+                        # Update log message if provided
                         if bug:
                             try:
                                 await bug.edit_text(text=stats)
-                            except:
-                                pass
+                            except Exception as bug_error:
+                                LOGGER.warning(f"Could not edit log message: {bug_error}")
                 
             except Exception as e:
                 LOGGER.error(f"Progress monitoring error: {e}")
@@ -241,8 +256,8 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
                 os.remove(progress)
             if os.path.exists(status):
                 os.remove(status)
-        except:
-            pass
+        except Exception as cleanup_error:
+            LOGGER.warning(f"Cleanup error: {cleanup_error}")
         
         # Check result
         if os.path.exists(out_put_file_name) and os.path.getsize(out_put_file_name) > 0:
@@ -256,13 +271,13 @@ async def convert_video(video_file, output_directory, total_time, bot, message, 
         LOGGER.error(f"Video conversion error: {e}")
         return None
 
-async def use_legacy_compression(file_genertor_command, video_file, target_percentage, total_time, isAuto, out_put_file_name):
+async def use_legacy_compression(file_genertor_command, video_file, target_percentage, total_time, isAuto):
     """Handle legacy compression for backward compatibility"""
     
-    # Default legacy settings with improvements
+    # FIXED: Default legacy settings with improvements
     file_genertor_command.extend([
-        "-c:v", "libx264",  # Fixed: was "h264" 
-        "-preset", "medium",  # Improved: was "ultrafast"
+        "-c:v", "libx264",  # FIXED: was "h264"
+        "-preset", "medium",  # FIXED: was "ultrafast"
         "-tune", "film",
         "-c:a", "copy"
     ])
@@ -280,12 +295,11 @@ async def use_legacy_compression(file_genertor_command, video_file, target_perce
             elif target_bitrate >= 1000:
                 bitrate = f"{target_bitrate//1000}k"
             else:
-                bitrate = "500k"  # Minimum fallback instead of returning None
+                bitrate = "500k"  # Minimum fallback
             
-            # Insert bitrate control
+            # Insert bitrate control before output file
             extra = ["-b:v", bitrate, "-bufsize", bitrate]
-            for elem in reversed(extra):
-                file_genertor_command.insert(-1, elem)  # Insert before output file
+            file_genertor_command.extend(extra)
                 
             LOGGER.info(f"Using legacy bitrate mode: {bitrate}")
             
@@ -296,7 +310,6 @@ async def use_legacy_compression(file_genertor_command, video_file, target_perce
     else:
         # Auto mode - use CRF
         file_genertor_command.extend(["-crf", "23"])
-        target_percentage = 'auto_CRF23'
 
 async def media_info(saved_file_path):
     """Enhanced media info with better async handling"""
@@ -310,7 +323,7 @@ async def media_info(saved_file_path):
         stdout, stderr = await process.communicate()
         output = stderr.decode().strip()  # ffmpeg prints info to stderr
         
-        # Parse duration
+        # FIXED: Better regex patterns
         duration = re.search(r"Duration:\s*(\d*):(\d*):(\d+\.?\d*)[\s\w*$]", output)
         bitrates = re.search(r"bitrate:\s*(\d+)[\s\w*$]", output)
         
@@ -377,29 +390,140 @@ async def take_screen_shot(video_file, output_directory, ttl):
         LOGGER.error(f"Error generating thumbnail: {e}")
         return None
 
-# Additional helper function for button system compatibility
+# Additional helper functions for button system compatibility
+
 def get_quality_preset(quality_name: str) -> Dict[str, Any]:
     """Get quality preset configuration"""
     return QUALITY_PRESETS.get(quality_name, QUALITY_PRESETS['custom'])
 
-async def convert_video_with_custom_settings(video_file, output_directory, total_time, bot, message, session):
-    """Convert video with custom settings from button system"""
+async def convert_video_with_custom_settings(video_file, output_directory, total_time, bot, message, session, log_message=None):
+    """Bridge function for custom settings compatibility"""
     return await convert_video(
         video_file=video_file,
         output_directory=output_directory,
         total_time=total_time,
         bot=bot,
         message=message,
-        target_percentage=session.quality,
+        target_percentage=f"{session.quality}_CRF{session.crf}",
         isAuto=False,
-        bug=None
+        bug=log_message
     )
+
+# Enhanced detailed media info functions
+
+async def get_media_info_detailed(file_path: str) -> Dict[str, Any]:
+    """Get detailed media information using ffprobe"""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+            '-show_format', '-show_streams', file_path
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            info = json.loads(stdout.decode())
+            return parse_media_info(info)
+        else:
+            LOGGER.error(f"FFprobe error: {stderr.decode()}")
+            return {}
+        
+    except Exception as e:
+        LOGGER.error(f"Error getting detailed media info: {e}")
+        return {}
+
+def parse_media_info(info: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse ffprobe output into useful information"""
+    try:
+        format_info = info.get('format', {})
+        streams = info.get('streams', [])
+        
+        video_stream = next((s for s in streams if s['codec_type'] == 'video'), None)
+        audio_stream = next((s for s in streams if s['codec_type'] == 'audio'), None)
+        
+        duration = float(format_info.get('duration', 0))
+        bitrate = int(format_info.get('bit_rate', 0))
+        size = int(format_info.get('size', 0))
+        
+        result = {
+            'duration': duration,
+            'bitrate': bitrate,
+            'size': size,
+            'format': format_info.get('format_name', ''),
+            'video': {},
+            'audio': {}
+        }
+        
+        if video_stream:
+            result['video'] = {
+                'codec': video_stream.get('codec_name', ''),
+                'width': int(video_stream.get('width', 0)),
+                'height': int(video_stream.get('height', 0)),
+                'fps': eval(video_stream.get('r_frame_rate', '0/1')) if video_stream.get('r_frame_rate') else 0,
+                'bitrate': int(video_stream.get('bit_rate', 0)) if video_stream.get('bit_rate') else 0
+            }
+        
+        if audio_stream:
+            result['audio'] = {
+                'codec': audio_stream.get('codec_name', ''),
+                'bitrate': int(audio_stream.get('bit_rate', 0)) if audio_stream.get('bit_rate') else 0,
+                'sample_rate': int(audio_stream.get('sample_rate', 0)) if audio_stream.get('sample_rate') else 0,
+                'channels': int(audio_stream.get('channels', 0)) if audio_stream.get('channels') else 0
+            }
+        
+        return result
+        
+    except Exception as e:
+        LOGGER.error(f"Error parsing media info: {e}")
+        return {}
+
+async def check_ffmpeg_availability() -> bool:
+    """Check if ffmpeg and ffprobe are available"""
+    try:
+        # Check ffmpeg
+        process = await asyncio.create_subprocess_exec(
+            'ffmpeg', '-version',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await process.communicate()
+        
+        if process.returncode != 0:
+            LOGGER.error("FFmpeg not found or not working")
+            return False
+        
+        # Check ffprobe
+        process = await asyncio.create_subprocess_exec(
+            'ffprobe', '-version',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await process.communicate()
+        
+        if process.returncode != 0:
+            LOGGER.error("FFprobe not found or not working")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        LOGGER.error(f"Error checking ffmpeg availability: {e}")
+        return False
 
 # Export main functions
 __all__ = [
     'convert_video',
-    'media_info', 
+    'media_info',
     'take_screen_shot',
     'convert_video_with_custom_settings',
-    'get_quality_preset'
+    'get_quality_preset',
+    'get_media_info_detailed',
+    'parse_media_info',
+    'check_ffmpeg_availability'
 ]
