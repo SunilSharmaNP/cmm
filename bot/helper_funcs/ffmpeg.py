@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# FINAL FIXED - Enhanced FFmpeg Handler with Button System + Working Progress Bar
-# Combines button system compatibility with working progress tracking
 
 import logging
 import asyncio
